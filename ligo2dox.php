@@ -56,19 +56,30 @@
             } else $content = file_get_contents(static::$filename);
             $content = preg_replace('/(\[@[^]]+]| +block +)/u', ' ', $content);//RU Зачищаем директивы компилятора и block
 
+            // //#define X -> #define X 0
+            if (preg_match_all('/(?<=\n)\/\/#[dD]efine +(?<define>[^ \n]+)/u', $content, $m, PREG_OFFSET_CAPTURE)) {
+                $dofs = 0;
+                foreach ($m[0] as $i => $dligo) {
+                    $ligo = $dligo[0];
+                    $content = static::replace($content, $ligo, $dligo[1] + $dofs, strlen($ligo), '#define '.$m['define'][$i][0].' false /// \brief OPTION DISABLED', $incofs);
+                    if ($incofs) $dofs += $incofs;
+                }
+            }
+
             $content = static::saveDecorations($content);
 
             if ((preg_match('/function\s+main\s*\(/u', $content))) {
                 $contract = '-' === static::$filename ? 'Contract' : preg_replace('/\.[^.]+$/', '', basename(static::$filename));
-                $namespace = 'namespace '.$contract.';';
+                $namespace = 'namespace '.$contract.' {';
                 $content = $namespace.$content;
                 static::incSavedOfs(0, strlen($namespace));
+                $content .= "\n\n}\n";
             }
 
             $rename = '[_a-zA-Z][_a-zA-Z0-9]*';
 
-            // module
-            if (preg_match_all('/(?<=\n)\s*module\s+(?<module>'.$rename.')\s+is\s+{/u', $content, $m, PREG_OFFSET_CAPTURE)) {
+            // module -> class
+            if (preg_match_all('/(?<=\n) *module +(?<module>'.$rename.') +is +{/u', $content, $m, PREG_OFFSET_CAPTURE)) {
                 $dofs = 0;
                 foreach ($m[0] as $i => $dligo) {
                     $ligo = $dligo[0]; $len = strlen($ligo); $ofs = $dligo[1] + $dofs;
@@ -80,7 +91,7 @@
                 }
             }
 
-            // type is record
+            // type is record -> typedef struct
             $refield = ' *(?<name>'.$rename.') *: *(?<type>[^;]+ *;)';
             if (preg_match_all('/(?<before>(?<=\n) *type +(?<type>'.$rename.') +is +record *\[)(?<fields>[^]]*)(?<close>]\s*;?)/u', $content, $m, PREG_OFFSET_CAPTURE)) {
                 $dofs = 0;
@@ -127,7 +138,7 @@
                 }
             }
 
-            // type is |
+            // type is | -> enum
             $recase = '(?<precase>(\n\s*)*\|?\s*)(?<case>[A-Z][_a-zA-Z0-9]*)(?<aftcase>\s*[^\n|;]*)';
             if (preg_match_all('/(?<before>(?<=\n) *type +(?<name>'.$rename.') +is)(?<cases>\s*('.$recase.')+)/u', $content, $m, PREG_OFFSET_CAPTURE)) {
                 $dofs = 0;
@@ -159,9 +170,27 @@
                 }
             }
 
+            // const
+            if (preg_match_all('/(?:(?<=\n)| )const +(?<name>'.$rename.') *: *(?<type>[^=;:]+) *=/u', $content, $m, PREG_OFFSET_CAPTURE)) {
+                $dofs = 0;
+                foreach ($m[0] as $i => $dligo) {
+                    $ofs = $dligo[1] + $dofs;
+                    $content = static::replace($content, $dligo[0], $ofs, strlen($dligo[0]), 'const '.static::patchType($m['type'][$i][0]).' '.$m['name'][$i][0].' =', $incofs);
+                    if ($incofs) {
+                        static::incSavedOfs($ofs, $incofs);
+                        $dofs += $incofs;
+                    }
+                }
+            }
+
             // function
-            $revar = '\s*(?<const>const|var)\s+(?<name>'.$rename.')\s*:\s*(?<type>[^;]+);?';
-            if (preg_match_all('/\s*function\s+(?<func>'.$rename.')\s*\((?<vars>(?:'.$revar.')+)\)\s*:(?<return>.*?)is\s*(?<open>{|[^\s]+)/u', $content, $m, PREG_OFFSET_CAPTURE)) {
+            $revar = '\s*(?<const>const|var) +(?<name>'.$rename.')\s*:\s*(?<type>[^;]+);?';
+            if (preg_match_all('/(?<=\n) *function +(?<func>'.$rename.')\s*\((?<vars>(?:'.$revar.')+)\)\s*:(?<return>.*?)is'.
+                '(?<open>\s*{'.// is block {
+                '|\s*case\s+.+\sof[^[]+(?<qb>\[(?>[^[\]]|(?&qb))*+])'.// case ... []
+                '|\s*[^\s(]+(?<rb>\((?>[^()]|(?&rb))*+\))'.// ...()
+                '|\s*[^;]+;'.// ...;
+                ')/u', $content, $m, PREG_OFFSET_CAPTURE)) {
                 $dofs = 0;
                 foreach ($m[0] as $i => $dligo) {
                     $ligo = $dligo[0]; $len = strlen($dligo[0]); $ofs = $dligo[1] + $dofs;
@@ -170,23 +199,38 @@
                     foreach($mv['name'] as $j => $name) {
                         $in[] = ('const' === ($mv['const'][$j] ?? '') ? 'const ' : '').static::patchType($mv['type'][$j]).' '.$name;
                     }
-                    $func = static::patchType($m['return'][$i][0]).' '.$m['func'][$i][0].'('.implode(',', $in).') ';
-                    $open = $m['open'][$i][0];
-                    if ('{' !== $open) {
-                        //TODO
+                    $open = $m['open'][$i][0]; $openlen = strlen($open);
+                    $isBlockOpen = preg_match('/{$/u', $open);
+                    if (!$isBlockOpen) {
+                        $content = substr($content, 0, $ofs + $len - $openlen).'{'.substr($content, $ofs + $len - $openlen);
+                        static::incSavedOfs($ofs + $len - $openlen, 1);
+                        $content = substr($content, 0, $ofs + $len + 1).'}'.substr($content, $ofs + $len + 1);
+                        static::incSavedOfs($ofs + $len + 1, 1);
                     }
-                    $func .= $open;
-                    $content = static::replace($content, $ligo, $ofs, $len, $func, $incofs);
+                    $func = static::patchType($m['return'][$i][0]).' '.$m['func'][$i][0].'('.implode(',', $in).') ';
+                    $content = static::replace($content, substr($ligo, 0, $len - $openlen), $ofs, $len - $openlen, $func, $incofs);
                     if ($incofs) {
                         static::incSavedOfs($ofs, $incofs);
                         $dofs += $incofs;
                     }
+                    if (!$isBlockOpen) $dofs += 2;
                 }
             }
 
+            // with ... ->
+            if (preg_match_all('/(?<=[ }])with +([_a-zA-Z][_a-zA-Z0-9]*|\((?>[^()]|(?1))*+\))/u', $content, $m, PREG_OFFSET_CAPTURE)) {
+                foreach ($m[0] as $i => $dligo) {
+                    $ligo = $dligo[0];
+                    $content = static::replace($content, $ligo, $dligo[1], strlen($ligo), static::spaces($ligo), $incofs);
+                }
+            }
+
+            // := -> =
+            $content = str_replace(':=', ' =', $content);
+
             $content = static::restoreDecorations($content);
 
-            echo "\n\n".$content."\n\n";
+            echo $content;
 
             return true;
         }
@@ -203,7 +247,7 @@
             }
             $sligo = substr($content, $ofs, $len);
             if ($ligo !== $sligo) static::stderr("Replace error: '$ligo' != '$sligo'");
-            //static::stderr("$incofs\n'$ligo'\n ---> \n'$replace'\n");
+            //DEBUG static::stderr("$incofs\n'$ligo'\n ---> \n'$replace'\n");
             $content = substr($content, 0, $ofs).$replace.substr($content, $ofs + $len);
             return $content;
         }
@@ -211,7 +255,7 @@
         protected static function patchType(string $type):string {
             $type = trim($type);
             if (preg_match('/^option\((.*)\)$/u', $type, $mt)) {
-                return 'std::variant<'.static::patchType($mt[1]).'>';
+                return 'option<'.static::patchType($mt[1]).'>';
             }
             $types = explode('*', $type);
             if (count($types) > 1) {
@@ -220,15 +264,19 @@
                     $subtype =rtrim($subtype, '*');
                     $subtypes[] = static::patchType($subtype);
                 }
-                return 'std::tuple<'.implode(',', $subtypes).'>';
+                return (2 == count($subtypes) ? 'pair' : 'tuple').'<'.implode(',', $subtypes).'>';
             } else {
-                if (preg_match('/^(?:map|big_map)\((.*)\)$/ui', $type, $mm)) {
+                if (preg_match('/^map\((.*)\)$/ui', $type, $mm)) {
                     $types = explode(',', $mm[1]);
-                    return 'std::map<'.static::patchType(trim($types[0], '()')).','.static::patchType(trim($types[1], '()')).'>';
+                    return 'map<'.static::patchType(trim($types[0], '()')).','.static::patchType(trim($types[1], '()')).'>';
+                }
+                if (preg_match('/^big_map\((.*)\)$/ui', $type, $mm)) {
+                    $types = explode(',', $mm[1]);
+                    return 'big_map<'.static::patchType(trim($types[0], '()')).','.static::patchType(trim($types[1], '()')).'>';
                 }
                 if (preg_match('/^(list|set|contract)\((.*)\)$/ui', $type, $ml)) {
-                    if ('list' === strtolower($ml[1])) return 'std::list<'.static::patchType($ml[2]).'>';
-                    else if ('set' === strtolower($ml[1])) return 'std::set<'.static::patchType($ml[2]).'>';
+                    if ('list' === strtolower($ml[1])) return 'list<'.static::patchType($ml[2]).'>';
+                    else if ('set' === strtolower($ml[1])) return 'set<'.static::patchType($ml[2]).'>';
                     else return 'contract<'.static::patchType($ml[2]).'>';
                 }
                 if (preg_match('/(?<module>[_a-zA-Z0-9]+)\.(?<type>[_a-zA-Z0-9]+)/u', $type, $mm)) {
