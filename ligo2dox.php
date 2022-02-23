@@ -83,6 +83,7 @@
 
             $content = static::saveDecorations($content);
 
+            // function main -> namespace
             if ((preg_match('/function\s+main\s*\(/u', $content))) {
                 $contract = '-' === static::$filename ? 'Contract' : preg_replace('/\.[^.]+$/', '', basename(static::$filename));
                 $namespace = 'namespace '.$contract.' {';
@@ -165,8 +166,8 @@
                         $jofs = $fdata[1] + $djofs;
                         $precase = static::spaces($mv['precase'][$j][0]);
                         $aftcase = static::spaces($mv['aftcase'][$j][0]);
-                        if (' ' === substr($aftcase, 0, 1)) $aftcase = substr($aftcase, 1);
-                        else if (' ' === substr($precase, -1)) $precase = substr($precase, 0, -1);
+                        if (' ' === substr($precase, -1)) $precase = substr($precase, 0, -1);
+                        else if (' ' === substr($aftcase, 0, 1)) $aftcase = substr($aftcase, 1);
                         $rcases = static::replace($rcases, $fdata[0], $jofs, strlen($fdata[0]), $precase.$mv['case'][$j][0].($j == ($c - 1) ? '}' : ',').$aftcase, $incofs);
                         $djofs += $incofs;
                     }
