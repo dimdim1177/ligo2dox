@@ -1,24 +1,39 @@
 #!/usr/bin/php
 <?php
 
+///RU \file
+///RU Преобразование кода LIGO для автодокументирования с помощью Doxygen
+///RU Скрипт разработан для преобработки проекта на LIGO пофайлово в C++ подобный код, чтобы Doxygen успешно распознал в них функции, переменные, классы.
+///RU Разрабатывался и тестировался в Debian 11 / PHP 7.4.
+///RU \author Дмитрий Дмитриев
+///RU \date 02.2022
+///RU \copyright MIT
+///EN \file
+///EN Convert LIGO code for auto-documenting by Doxygen
+///EN The script is designed for preprocessing LIGO code project to C++ like code, in order to Doxygen recognize in it variables, functions, classes.
+///EN Developed and testing under Debian 11 / PHP 7.4.
+///EN \author Dmitrii Dmitriev
+///EN \date 02.2022
+///EN \copyright MIT
+
     class Ligo2Dox {
-        //RU Файл для обработки, '-' - stdin
-        //EN File for patch, '-' - stdin
+        ///RU Файл для обработки, '-' - stdin
+        ///EN File for patch, '-' - stdin
         protected static $filename = '';
 
-        protected static $saved = [];//RU Сохраненные директивы, комментарии
+        protected static $saved = [];///RU Сохраненные директивы, комментарии
 
         public static function run(array $argv):bool {
             if (!static::parseArgs($argv)) return false;
             return static::patch();
         }
 
-        //RU Разбор аргументов командной строки
-        //EN Parse command line arguments
+        ///RU Разбор аргументов командной строки
+        ///EN Parse command line arguments
         protected static function parseArgs(array $argv): bool {
             $errors = [];
             for ($i = 1; $i < count($argv); ++$i) {
-                $arg = $argv[$i]; $len = mb_strlen($arg);
+                $arg = $argv[$i];
                 if (!static::$filename) {
                     if ('-' !== $arg) {
                         if (!file_exists($arg)) $errors[] = "Not found file '$arg'";
@@ -35,8 +50,8 @@
             return true;
         }
 
-        //RU Вывод справки о параметрах
-        //EN Print usage of script
+        ///RU Вывод справки о параметрах
+        ///EN Print usage of script
         public static function usage($argv, bool $tostderr = false):void {
             fwrite($tostderr ? STDERR : STDOUT, implode("\n", [
                 "Usage: ".basename($argv[0])." FILENAME|-, where",
@@ -45,7 +60,7 @@
             ])."\n\n");
         }
 
-        //EN Patch file/stdin content
+        ///EN Patch file/stdin content
         protected static function patch():bool {
             if ('-' === static::$filename) {
                 $content = '';
@@ -54,14 +69,14 @@
                     usleep(50000);
                 }
             } else $content = file_get_contents(static::$filename);
-            $content = preg_replace('/(\[@[^]]+]| +block +)/u', ' ', $content);//RU Зачищаем директивы компилятора и block
+            $content = preg_replace('/(\[@[^]]+]| +block +)/u', ' ', $content);///RU Зачищаем директивы компилятора и block
 
             // //#define X -> #define X 0
             if (preg_match_all('/(?<=\n)\/\/#[dD]efine +(?<define>[^ \n]+)/u', $content, $m, PREG_OFFSET_CAPTURE)) {
                 $dofs = 0;
                 foreach ($m[0] as $i => $dligo) {
                     $ligo = $dligo[0];
-                    $content = static::replace($content, $ligo, $dligo[1] + $dofs, strlen($ligo), '#define '.$m['define'][$i][0].' false /// \brief OPTION DISABLED', $incofs);
+                    $content = static::replace($content, $ligo, $dligo[1] + $dofs, strlen($ligo), '#define '.$m['define'][$i][0].' false', $incofs);
                     if ($incofs) $dofs += $incofs;
                 }
             }
@@ -237,7 +252,7 @@
 
         protected static function replace(string $content, string $ligo, int $ofs, int $len, string $replace, &$incofs = null):string {
             $llines = count(explode("\n", $ligo)); $rlines = count(explode("\n", $replace));
-            if ($rlines < $llines) $replace = str_repeat("\n", $llines - $rlines).$replace;//RU Сохраняем кол-во строк
+            if ($rlines < $llines) $replace = str_repeat("\n", $llines - $rlines).$replace;///RU Сохраняем кол-во строк
             $newlen = strlen($replace);
             if ($newlen > $len) {
                 $incofs = $newlen - $len;
@@ -293,10 +308,10 @@
             unset($save);
         }
 
-        //RU Извлечение, сохранение в переменную и замена пробелами такой же длины В БАЙТАХ директив, комментариев
+        ///RU Извлечение, сохранение в переменную и замена пробелами такой же длины В БАЙТАХ директив, комментариев
         protected static function saveDecorations(string $content):string {
             //RU Извлекаем и заменяем пробелами такой же длины В БАЙТАХ директивы, комментарии
-            $redecor[] = '(?:^|\n)#(define|if|endif|include)[^\n]*';//RU Директивы препроцессора (строка целиком)
+            $redecor[] = '(?:^|\n)#(define|if|else|endif|include)[^\n]*';//RU Директивы препроцессора (строка целиком)
             $redecor[] = preg_quote('//', '/').'[^\n]*(\n *'.preg_quote('//', '/').'[^\n]*)*';//RU Однострочные комментарии
             $redecor[] = preg_quote('(*', '/').'[\\S\\s]*?'.preg_quote('*)', '/');//RU Многострочные комментарии
             $redecor = '(?:'.implode('|', $redecor).')';
@@ -304,7 +319,7 @@
             if (preg_match_all('/'.$redecor.'/u', $content, $mc, PREG_OFFSET_CAPTURE)) {
                 foreach($mc[0] as $data) {
                     $s = $data[0]; $len = strlen($s);
-                    //RU Заменяем С++ многострочными комментариями
+                    ///RU Заменяем С++ многострочными комментариями
                     if (('(*' === substr($s, 0, 2)) && ('*)' === substr($s, -2))) $s = '/*'.substr($s, 2, $len - 4).'*/';
                     $ofs = $data[1];
                     static::$saved[] = [
@@ -319,7 +334,7 @@
             return $content;
         }
 
-        //RU Все, кроме переводов строки, заменяем пробелами по кол-ву байтов
+        ///RU Все, кроме переводов строки, заменяем пробелами по кол-ву байтов
         protected static function spaces(string $s):string {
             if ('' === $s) return $s;
             $lines = explode("\n", $s);

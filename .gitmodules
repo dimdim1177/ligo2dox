@@ -1,0 +1,7 @@
+
+[submodule "examples/multi-language/doc/mlcomment"]
+	path = examples/multi-language/doc/mlcomment
+	url = git@github.com:dimdim1177/mlcomment.git
+[submodule "examples/quipuswap/quipuswap-stable-core"]
+	path = examples/quipuswap/quipuswap-stable-core
+	url = https://github.com/madfish-solutions/quipuswap-stable-core.git
