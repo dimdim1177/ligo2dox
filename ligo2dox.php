@@ -81,21 +81,23 @@
                 }
             }
 
-            $content = static::saveDecorations($content);
+            $classofs = 0;//RU Куда вставлять class {
 
-            // function main -> namespace
-            if ((preg_match('/function\s+main\s*\(/u', $content))) {
-                $contract = '-' === static::$filename ? 'Contract' : preg_replace('/\.[^.]+$/', '', basename(static::$filename));
-                $namespace = 'namespace '.$contract.' {';
-                $content = $namespace.$content;
-                static::incSavedOfs(0, strlen($namespace));
-                $content .= "\n\n}\n";
+            if (preg_match('/((?:^|\n)#[a-z]+[^\n]*)+/u', $content, $m, PREG_OFFSET_CAPTURE)) {
+                $classofs = $m[0][1] + strlen($m[0][0]) + 1;
             }
 
-            $rename = '[_a-zA-Z][_a-zA-Z0-9]*';
+            if (preg_match_all('/(?:^|\n)#include\s+[^\n]+/u', $content, $m, PREG_OFFSET_CAPTURE)) {
+                $lastinclude = $m[0][count($m[0]) - 1];
+                $classofs = $lastinclude[1] + strlen($lastinclude[0]) + 1;
+            }
+
+            $content = static::saveDecorations($content);
+
+            $relexem = '[_a-zA-Z][_a-zA-Z0-9]*';
 
             // module -> class
-            if (preg_match_all('/(?<=\n) *module +(?<module>'.$rename.') +is +{/u', $content, $m, PREG_OFFSET_CAPTURE)) {
+            if (preg_match_all('/(?<=\n) *module +(?<module>'.$relexem.') +is +{/u', $content, $m, PREG_OFFSET_CAPTURE)) {
                 $dofs = 0;
                 foreach ($m[0] as $i => $dligo) {
                     $ligo = $dligo[0]; $len = strlen($ligo); $ofs = $dligo[1] + $dofs;
@@ -105,11 +107,33 @@
                         $dofs += $incofs;
                     }
                 }
+            } else {
+
+                $class = '';
+
+                // function main -> class
+                if ((preg_match('/function\s+main\s*\(/u', $content))) {
+                    $class = '-' === static::$filename ? 'Contract' : preg_replace('/\.[^.]+$/', '', basename(static::$filename));
+                }
+
+                if ('-' !== static::$filename) {
+                    $dir = dirname(static::$filename);
+                    $dirname = basename($dir);
+                    if (file_exists(dirname($dir).DIRECTORY_SEPARATOR.$dirname.'.ligo')) $class = $dirname;
+                }
+
+                // class { public: CONTENT }
+                if ($class) {
+                    $class = "class $class { public: ";
+                    $content = substr($content, 0, $classofs).$class.substr($content, $classofs);
+                    static::incSavedOfs($classofs, strlen($class));
+                    $content .= "\n\n}\n";
+                }
             }
 
             // type is record -> typedef struct
-            $refield = ' *(?<name>'.$rename.') *: *(?<type>[^;]+ *;)';
-            if (preg_match_all('/(?<before>(?<=\n) *type +(?<type>'.$rename.') +is +record *\[)(?<fields>[^]]*)(?<close>]\s*;?)/u', $content, $m, PREG_OFFSET_CAPTURE)) {
+            $refield = ' *(?<name>'.$relexem.') *: *(?<type>[^;]+ *;)';
+            if (preg_match_all('/(?<before>(?<=\n) *type +(?<type>'.$relexem.') +is +record *\[)(?<fields>[^]]*)(?<close>]\s*;?)/u', $content, $m, PREG_OFFSET_CAPTURE)) {
                 $dofs = 0;
                 foreach ($m[0] as $i => $dligo) {
                     $rfields = $fields = $m['fields'][$i][0];
@@ -142,7 +166,7 @@
             }
 
             // type is
-            if (preg_match_all('/(?<before>(?<=\n) *type +(?<name>'.$rename.') +is)(?<type>[^\n|;]+;?)/u', $content, $m, PREG_OFFSET_CAPTURE)) {
+            if (preg_match_all('/(?<before>(?<=\n) *type +(?<name>'.$relexem.') +is)(?<type>[^\n|;]+;?)/u', $content, $m, PREG_OFFSET_CAPTURE)) {
                 $dofs = 0;
                 foreach ($m[0] as $i => $dligo) {
                     $ofs = $dligo[1] + $dofs;
@@ -156,7 +180,7 @@
 
             // type is | -> enum
             $recase = '(?<precase>(\n\s*)*\|?\s*)(?<case>[A-Z][_a-zA-Z0-9]*)(?<aftcase>\s*[^\n|;]*)';
-            if (preg_match_all('/(?<before>(?<=\n) *type +(?<name>'.$rename.') +is)(?<cases>\s*('.$recase.')+)/u', $content, $m, PREG_OFFSET_CAPTURE)) {
+            if (preg_match_all('/(?<before>(?<=\n) *type +(?<name>'.$relexem.') +is)(?<cases>\s*('.$recase.')+)/u', $content, $m, PREG_OFFSET_CAPTURE)) {
                 $dofs = 0;
                 foreach ($m[0] as $i => $dligo) {
                     $rcases = $m['cases'][$i][0];
@@ -187,7 +211,7 @@
             }
 
             // const
-            if (preg_match_all('/(?:(?<=\n)| )const +(?<name>'.$rename.') *: *(?<type>[^=;:]+) *=/u', $content, $m, PREG_OFFSET_CAPTURE)) {
+            if (preg_match_all('/(?:(?<=\n)| )const +(?<name>'.$relexem.') *: *(?<type>[^=;:]+) *=/u', $content, $m, PREG_OFFSET_CAPTURE)) {
                 $dofs = 0;
                 foreach ($m[0] as $i => $dligo) {
                     $ofs = $dligo[1] + $dofs;
@@ -200,8 +224,8 @@
             }
 
             // function
-            $revar = '\s*(?<const>const|var) +(?<name>'.$rename.')\s*:\s*(?<type>[^;]+);?';
-            if (preg_match_all('/(?<=\n) *function +(?<func>'.$rename.')\s*\((?<vars>(?:'.$revar.')+)\)\s*:(?<return>.*?)is'.
+            $revar = '\s*(?<const>const|var) +(?<name>'.$relexem.')\s*:\s*(?<type>[^;]+);?';
+            if (preg_match_all('/(?<=\n) *function +(?<func>'.$relexem.')\s*\((?<vars>(?:'.$revar.')+)\)\s*:(?<return>.*?)is'.
                 '(?<open>\s*{'.// is block {
                 '|\s*case\s+.+\sof[^[]+(?<qb>\[(?>[^[\]]|(?&qb))*+])'.// case ... []
                 '|\s*[^\s(]+(?<rb>\((?>[^()]|(?&rb))*+\))'.// ...()

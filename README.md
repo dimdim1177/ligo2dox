@@ -24,6 +24,10 @@ In a nutshell:
 
 During all these recodings, the script tries as much as possible to preserve the position of entities and comments in lines, because Doxigen is attached to lines of code.
 
+Files with function main in it represented as class. For example, file Contract.ligo with function main in documentation will be class Contract.
+
+Files with parent folder same as ligo file represented as class. For example, file Contract/storage.ligo AND if exists Contract.ligo represented as part of class Contract.  
+
 ### Possible problems 
 
 Of course, the script, when analyzed, relies on the syntactically correct PascaLIGO code. That is why, as you can see by algorithm above, some constructions of preprocessor instructions will fails.
