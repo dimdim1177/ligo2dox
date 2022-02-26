@@ -82,6 +82,7 @@
             }
 
             $classofs = 0;//RU Куда вставлять class {
+            $endclassofs = -1;//RU Куда вставлять }
 
             if (preg_match('/((?:^|\n)#[a-z]+[^\n]*)+/u', $content, $m, PREG_OFFSET_CAPTURE)) {
                 $classofs = $m[0][1] + strlen($m[0][0]) + 1;
@@ -90,6 +91,12 @@
             if (preg_match_all('/(?:^|\n)#include\s+[^\n]+/u', $content, $m, PREG_OFFSET_CAPTURE)) {
                 $lastinclude = $m[0][count($m[0]) - 1];
                 $classofs = $lastinclude[1] + strlen($lastinclude[0]) + 1;
+            }
+
+            if (preg_match('/^#if/u', $content)) {
+                if (preg_match('/\n#endif\s*(\/\/[^\n]*)?\s*$/', $content, $m, PREG_OFFSET_CAPTURE)) {
+                    $endclassofs = $m[0][1];
+                }
             }
 
             $content = static::saveDecorations($content);
@@ -127,7 +134,13 @@
                     $class = "class $class { public: ";
                     $content = substr($content, 0, $classofs).$class.substr($content, $classofs);
                     static::incSavedOfs($classofs, strlen($class));
-                    $content .= "\n\n}\n";
+                    if ($endclassofs < 0) $content .= "\n}\n";
+                    else {
+                        $endclassofs += strlen($class);
+                        $endclass = "\n}";
+                        $content = substr($content, 0, $endclassofs).$endclass.substr($content, $endclassofs);
+                        static::incSavedOfs($endclassofs, strlen($endclass));
+                    }
                 }
             }
 
