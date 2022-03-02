@@ -224,11 +224,11 @@
             }
 
             // const
-            if (preg_match_all('/(?:(?<=\n)| )const +(?<name>'.$relexem.') *: *(?<type>[^=;:]+) *=/u', $content, $m, PREG_OFFSET_CAPTURE)) {
+            if (preg_match_all('/(?:(?<=\n)| )const +(?<name>'.$relexem.') *(?:: *(?<type>[^=;:]+) *)?=/u', $content, $m, PREG_OFFSET_CAPTURE)) {
                 $dofs = 0;
                 foreach ($m[0] as $i => $dligo) {
                     $ofs = $dligo[1] + $dofs;
-                    $content = static::replace($content, $dligo[0], $ofs, strlen($dligo[0]), 'const '.static::patchType($m['type'][$i][0]).' '.$m['name'][$i][0].' =', $incofs);
+                    $content = static::replace($content, $dligo[0], $ofs, strlen($dligo[0]), 'const '.static::patchType($m['type'][$i][0] ?? '').' '.$m['name'][$i][0].' =', $incofs);
                     if ($incofs) {
                         static::incSavedOfs($ofs, $incofs);
                         $dofs += $incofs;
@@ -307,6 +307,7 @@
 
         protected static function patchType(string $type):string {
             $type = trim($type);
+            if (!$type) return 'auto';
             if (preg_match('/^option\((.*)\)$/u', $type, $mt)) {
                 return 'option<'.static::patchType($mt[1]).'>';
             }
